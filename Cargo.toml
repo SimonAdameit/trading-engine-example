@@ -1,0 +1,13 @@
+[package]
+name = "trading_engine"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+csv = "1.1"
+rust_decimal = { version = "1.26", features = ["serde-with-str"] }
+anyhow = "1.0"
+clap = { version = "3.2", features = ["derive"] }
