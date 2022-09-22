@@ -32,8 +32,10 @@ OPTIONS:
 
 ## Correctness
 
-Due to time constraints, the program only contains an insufficient number
-of tests at the top level. However, there is no known incorrectness.
+The transaction and dispute state are enums. That should help
+to make the prerequisites for transactions clear. As the specification
+suggested, a transaction that fails to meet its prerequisites is
+handled as client error and ignored.
 
 ## Interpretation of the requirements
 
