@@ -114,7 +114,7 @@ client,available,held,total,locked
     }
 
     #[test]
-    fn double_dispute() {
+    fn double_disputes_are_ignored() {
         assert_result(
             "\
 type,    client,  tx,  amount
@@ -131,7 +131,7 @@ client,available,held,total,locked
     }
 
     #[test]
-    fn double_chargeback() {
+    fn double_chargebacks_are_ignored() {
         assert_result(
             "\
 type,    client,  tx,  amount
@@ -149,7 +149,7 @@ client,available,held,total,locked
     }
 
     #[test]
-    fn double_dispute_and_chargeback() {
+    fn double_dispute_and_chargeback_are_ignored() {
         assert_result(
             "\
 type,    client,  tx,  amount
