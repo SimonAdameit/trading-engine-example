@@ -113,6 +113,60 @@ client,available,held,total,locked
         )
     }
 
+    #[test]
+    fn double_dispute() {
+        assert_result(
+            "\
+type,    client,  tx,  amount
+deposit,      1,   1,     1.0
+deposit,      1,   2,     3.0
+dispute,      1,   1
+dispute,      1,   1
+",
+            "\
+client,available,held,total,locked
+1,3,1,4,false
+",
+        )
+    }
+
+    #[test]
+    fn double_chargeback() {
+        assert_result(
+            "\
+type,    client,  tx,  amount
+deposit,      1,   1,     1.0
+deposit,      1,   2,     3.0
+dispute,      1,   1
+chargeback,   1,   1
+chargeback,   1,   1
+",
+            "\
+client,available,held,total,locked
+1,3,0,3,true
+",
+        )
+    }
+
+    #[test]
+    fn double_dispute_and_chargeback() {
+        assert_result(
+            "\
+type,    client,  tx,  amount
+deposit,      1,   1,     1.0
+deposit,      1,   2,     3.0
+dispute,      1,   1
+chargeback,   1,   1
+dispute,      1,   1
+chargeback,   1,   1
+",
+            "\
+client,available,held,total,locked
+1,3,0,3,true
+",
+        )
+    }
+
     fn assert_result(input: &'static str, output: &'static str) {
         let mut bytes = Vec::new();
         let reader = csv::ReaderBuilder::new()

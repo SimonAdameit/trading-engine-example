@@ -25,14 +25,14 @@ impl Amount {
     }
 }
 
-impl AddAssign for Amount {
-    fn add_assign(&mut self, rhs: Self) {
+impl AddAssign<&Self> for Amount {
+    fn add_assign(&mut self, rhs: &Self) {
         self.0.add_assign(rhs.0)
     }
 }
 
-impl SubAssign for Amount {
-    fn sub_assign(&mut self, rhs: Self) {
+impl SubAssign<&Self> for Amount {
+    fn sub_assign(&mut self, rhs: &Self) {
         self.0.sub_assign(rhs.0)
     }
 }
@@ -62,7 +62,7 @@ pub struct Account {
     held: Amount,
     total: Amount,
     locked: bool,
-    transactions: HashMap<TransactionId, TransactionState>,
+    transactions: HashMap<TransactionId, AccountTransaction>,
 }
 
 #[derive(Serialize, Eq, PartialEq, Clone, Debug)]
@@ -74,27 +74,28 @@ pub struct AccountInfo {
     pub locked: bool,
 }
 
-struct TransactionState {
+struct AccountTransaction {
     transaction: Transaction,
-    executed: bool,
-    disputed: bool,
+    state: TransactionState,
 }
 
+enum TransactionState {
+    Failed,
+    Executed { dispute: DisputeState },
+}
 impl TransactionState {
-    fn succeeded(transaction: Transaction) -> Self {
-        Self {
-            transaction,
-            executed: true,
-            disputed: false,
+    fn executed() -> Self {
+        Self::Executed {
+            dispute: DisputeState::Undisputed,
         }
     }
-    fn failed(transaction: Transaction) -> Self {
-        Self {
-            transaction,
-            executed: false,
-            disputed: false,
-        }
-    }
+}
+
+enum DisputeState {
+    Undisputed,
+    Disputed,
+    Resolved,
+    Chargeback,
 }
 
 impl Account {
@@ -134,60 +135,87 @@ impl Account {
     }
 
     fn deposit(&mut self, transaction: Transaction) -> Result<()> {
-        let amount = transaction.amount.context("Deposit requires amount")?;
+        let amount = &transaction.amount.context("Deposit requires amount")?;
         let tx = transaction.tx;
         self.available += amount;
         self.total += amount;
-        self.transactions.insert(tx, TransactionState::succeeded(transaction));
+        let state = TransactionState::executed();
+        self.transactions.insert(tx, AccountTransaction { transaction, state });
         Ok(())
     }
 
     fn withdrawal(&mut self, transaction: Transaction) -> Result<()> {
-        let amount = transaction.amount.context("Withdrawal requires amount")?;
+        let amount = &transaction.amount.context("Withdrawal requires amount")?;
         let tx = transaction.tx;
-        if self.available >= amount {
+        let state = if &self.available >= amount {
             self.available -= amount;
             self.total -= amount;
-            self.transactions.insert(tx, TransactionState::succeeded(transaction));
+            TransactionState::executed()
         } else {
-            self.transactions.insert(tx, TransactionState::failed(transaction));
-        }
+            TransactionState::Failed
+        };
+        self.transactions.insert(tx, AccountTransaction { transaction, state });
         Ok(())
     }
 
     fn dispute(&mut self, transaction: Transaction) -> Result<()> {
-        if let Some(target) = self.transactions.get_mut(&transaction.tx) {
-            if target.executed && target.transaction.transaction_type == Deposit {
-                target.disputed = true;
-                let amount = target.transaction.amount.context("Deposit has amount")?;
-                self.available -= amount;
-                self.held += amount;
-            }
+        if let Some(AccountTransaction {
+            transaction:
+                Transaction {
+                    transaction_type: Deposit,
+                    amount: Some(amount),
+                    ..
+                },
+            state:
+                TransactionState::Executed {
+                    dispute: dispute @ (DisputeState::Undisputed | DisputeState::Resolved),
+                },
+        }) = self.transactions.get_mut(&transaction.tx)
+        {
+            *dispute = DisputeState::Disputed;
+            self.available -= amount;
+            self.held += amount;
         }
         Ok(())
     }
 
     fn resolve(&mut self, transaction: Transaction) -> Result<()> {
-        if let Some(target) = self.transactions.get_mut(&transaction.tx) {
-            if target.disputed && target.transaction.transaction_type == Deposit {
-                target.disputed = false;
-                let amount = target.transaction.amount.context("Deposit has amount")?;
-                self.available += amount;
-                self.held -= amount;
-            }
+        if let Some(AccountTransaction {
+            transaction:
+                Transaction {
+                    transaction_type: Deposit,
+                    amount: Some(amount),
+                    ..
+                },
+            state: TransactionState::Executed {
+                dispute: dispute @ DisputeState::Disputed,
+            },
+        }) = self.transactions.get_mut(&transaction.tx)
+        {
+            *dispute = DisputeState::Resolved;
+            self.available += amount;
+            self.held -= amount;
         }
         Ok(())
     }
 
     fn chargeback(&mut self, transaction: Transaction) -> Result<()> {
-        if let Some(target) = self.transactions.get_mut(&transaction.tx) {
-            if target.disputed && target.transaction.transaction_type == Deposit {
-                target.disputed = false;
-                let amount = target.transaction.amount.context("Deposit has amount")?;
-                self.held -= amount;
-                self.total -= amount;
-                self.locked = true;
-            }
+        if let Some(AccountTransaction {
+            transaction:
+                Transaction {
+                    transaction_type: Deposit,
+                    amount: Some(amount),
+                    ..
+                },
+            state: TransactionState::Executed {
+                dispute: dispute @ DisputeState::Disputed,
+            },
+        }) = self.transactions.get_mut(&transaction.tx)
+        {
+            *dispute = DisputeState::Chargeback;
+            self.locked = true;
+            self.held -= amount;
+            self.total -= amount;
         }
         Ok(())
     }
